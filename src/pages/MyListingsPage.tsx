@@ -3,14 +3,17 @@ import { EmptyState } from "../components/EmptyState";
 import { ListingCard } from "../components/ListingCard";
 import { PageTitle } from "../components/PageTitle";
 import { Listing } from "../types";
+
 export function MyListingsPage({
   items,
   onOpen,
   onSell,
+  onToggleSold,
 }: {
   items: Listing[];
   onOpen: (item: Listing) => void;
   onSell: () => void;
+  onToggleSold?: (id: string) => void;
 }) {
   return (
     <ScrollView contentContainerStyle={styles.content}>
@@ -39,12 +42,14 @@ export function MyListingsPage({
             saved={false}
             onSave={() => undefined}
             onOpen={() => onOpen(item)}
+            onToggleSold={onToggleSold ? () => onToggleSold(item.id) : undefined}
           />
         )}
       />
     </ScrollView>
   );
 }
+
 const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 110 },
   columns: { gap: 14 },

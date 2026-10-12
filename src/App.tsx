@@ -20,6 +20,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  updateDoc,
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -128,8 +129,8 @@ export default function App() {
           snapshot.empty
             ? seedListings
             : snapshot.docs.map(
-                (entry) => ({ id: entry.id, ...entry.data() }) as Listing,
-              ),
+              (entry) => ({ id: entry.id, ...entry.data() }) as Listing,
+            ),
         ),
       () => setItems(seedListings),
     );
@@ -166,22 +167,31 @@ export default function App() {
         : [...current, id],
     );
 
-  const toggleSoldStatus = (id: string) => {
+  const toggleSoldStatus = async (id: string) => {
+    const item = items.find((entry) => entry.id === id);
+    const nextStatus = item?.status === "sold" ? "available" : "sold";
+
     setItems((current) =>
-      current.map((item) =>
-        item.id === id
-          ? { ...item, status: item.status === "sold" ? "available" : "sold" }
-          : item,
+      current.map((entry) =>
+        entry.id === id ? { ...entry, status: nextStatus } : entry,
       ),
     );
     setSelected((current) =>
       current && current.id === id
         ? {
-            ...current,
-            status: current.status === "sold" ? "available" : "sold",
-          }
+          ...current,
+          status: nextStatus,
+        }
         : current,
     );
+
+    if (db) {
+      try {
+        await updateDoc(doc(db, "listings", id), { status: nextStatus });
+      } catch (e) {
+        // demo mode / fallback without Firestore writes
+      }
+    }
   };
   const signInWithGoogle = async () => {
     if (!auth) return;
@@ -280,6 +290,7 @@ export default function App() {
           items={myListings}
           onOpen={setSelected}
           onSell={() => setSellOpen(true)}
+          onToggleSold={toggleSoldStatus}
         />
       )}
       {tab === "Dashboard" && (
@@ -493,10 +504,10 @@ function ListingModal({
               >
                 <Text style={styles.primaryText}>
                   {isSold
-                    ? "Item Sold"
+                    ? "Contact Seller — Disabled"
                     : user
-                    ? `Message ${item.seller}`
-                    : "Sign in to contact seller"}
+                      ? `Message ${item.seller}`
+                      : "Sign in to contact seller"}
                 </Text>
               </Pressable>
 
@@ -818,4 +829,79 @@ const styles = StyleSheet.create({
     color: "#173C34",
   },
   disabled: { opacity: 0.45 },
+  categoryBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  modalSoldBadge: {
+    backgroundColor: "#C3535B",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  modalSoldBadgeText: {
+    color: "#FFF",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+  actionGroup: {
+    marginTop: 10,
+    gap: 10,
+  },
+  soldToggleBtn: {
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: "#EBF3EE",
+    borderWidth: 1,
+    borderColor: "#BDD4C6",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  soldToggleBtnActive: {
+    backgroundColor: "#FCEEEF",
+    borderColor: "#E6B8BC",
+  },
+  soldToggleText: {
+    color: "#1F5D4C",
+    fontWeight: "800",
+    fontSize: 14,
+  },
+  soldToggleTextActive: {
+    color: "#C3535B",
+  },
+  reportBtn: {
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reportText: {
+    color: "#A0AAA4",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  reasonsList: {
+    marginVertical: 16,
+    gap: 10,
+  },
+  reasonOption: {
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E0E5E2",
+    backgroundColor: "#FAFAFA",
+  },
+  reasonOptionSelected: {
+    borderColor: "#1F5D4C",
+    backgroundColor: "#EBF5EE",
+  },
+  reasonText: {
+    color: "#55645E",
+    fontSize: 14,
+  },
+  reasonTextSelected: {
+    color: "#1F5D4C",
+    fontWeight: "700",
+  },
 });
