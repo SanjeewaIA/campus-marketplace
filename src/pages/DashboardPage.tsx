@@ -1,3 +1,4 @@
+// Feature Implemented by Sanjeewa (Team Leader): Seller Dashboard & Performance Analytics
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { PageTitle } from "../components/PageTitle";
 import { Listing } from "../types";
@@ -21,26 +22,25 @@ export function DashboardPage({
   // Group listings by category
   const categoriesCount = listings.reduce((acc, item) => {
     acc[item.category] = (acc[item.category] || 0) + 1;
-    return acc;
   }, {} as Record<string, number>);
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <PageTitle
         title="Seller Dashboard"
-        subtitle="Performance, analytics and inventory overview"
+        subtitle="Performance, analytics and inventory overview • Developed by Sanjeewa"
       />
 
       {/* Analytics Cards */}
       <View style={styles.grid}>
         <View style={[styles.card, styles.cardGreen]}>
-          <Text style={styles.cardVal}>${totalEarned}</Text>
-          <Text style={styles.cardLabel}>Total Earned</Text>
+          <Text style={styles.cardVal}>LKR {totalEarned}</Text>
+          <Text style={styles.cardLabel}>Total Revenue Earned</Text>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardVal}>${totalValue}</Text>
-          <Text style={styles.cardLabel}>Inventory Value</Text>
+          <Text style={styles.cardVal}>LKR {totalValue}</Text>
+          <Text style={styles.cardLabel}>Total Inventory Value</Text>
         </View>
 
         <View style={styles.card}>
