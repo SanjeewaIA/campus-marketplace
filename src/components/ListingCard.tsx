@@ -6,11 +6,15 @@ export function ListingCard({
   saved,
   onSave,
   onOpen,
+  onToggleSold,
+  onContact,
 }: {
   item: Listing;
   saved: boolean;
   onSave: () => void;
   onOpen: () => void;
+  onToggleSold?: () => void;
+  onContact?: () => void;
 }) {
   const isSold = item.status === "sold";
   return (
@@ -43,6 +47,39 @@ export function ListingCard({
           {item.condition} · {item.campus}
         </Text>
         <Text style={styles.tiny}>Listed by {item.seller}</Text>
+
+        {onToggleSold && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={isSold ? "Mark as Available" : "Mark as Sold"}
+            style={[styles.soldBtn, isSold && styles.soldBtnActive]}
+            onPress={(e: any) => {
+              e?.stopPropagation?.();
+              onToggleSold();
+            }}
+          >
+            <Text style={[styles.soldBtnText, isSold && styles.soldBtnTextActive]}>
+              {isSold ? "✓ Sold (Make Available)" : "Mark as Sold"}
+            </Text>
+          </Pressable>
+        )}
+
+        {onContact && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={isSold ? "Contact seller disabled, item is sold" : "Contact Seller"}
+            disabled={isSold}
+            style={[styles.contactBtn, isSold && styles.contactBtnDisabled]}
+            onPress={(e: any) => {
+              e?.stopPropagation?.();
+              if (!isSold) onContact();
+            }}
+          >
+            <Text style={[styles.contactBtnText, isSold && styles.contactBtnTextDisabled]}>
+              {isSold ? "Contact Seller — Disabled" : "Contact Seller"}
+            </Text>
+          </Pressable>
+        )}
       </View>
     </Pressable>
   );
@@ -112,4 +149,47 @@ const styles = StyleSheet.create({
   mutedPrice: { color: "#7E8B85" },
   muted: { color: "#87918C", fontSize: 12 },
   tiny: { color: "#A0AAA4", fontSize: 10, marginTop: 5 },
+  soldBtn: {
+    marginTop: 10,
+    backgroundColor: "#1F5D4C",
+    borderRadius: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  soldBtnActive: {
+    backgroundColor: "#FCEEEF",
+    borderWidth: 1,
+    borderColor: "#E6B8BC",
+  },
+  soldBtnText: {
+    color: "#FFF",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  soldBtnTextActive: {
+    color: "#C3535B",
+  },
+  contactBtn: {
+    marginTop: 6,
+    backgroundColor: "#1F5D4C",
+    borderRadius: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  contactBtnDisabled: {
+    backgroundColor: "#E2E7E4",
+    opacity: 0.65,
+  },
+  contactBtnText: {
+    color: "#FFF",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  contactBtnTextDisabled: {
+    color: "#7E8B85",
+  },
 });
