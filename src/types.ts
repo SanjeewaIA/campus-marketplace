@@ -23,5 +23,27 @@ export type ListingReport = {
   createdAt: string;
 };
 
+export type ChatMessage = {
+  id: string;
+  sender: "buyer" | "seller";
+  senderName: string;
+  text: string;
+  timestamp: string;
+};
+
+export type Conversation = {
+  id: string;
+  listingId: string;
+  listingTitle: string;
+  listingPrice: number;
+  listingImage: string;
+  sellerName: string;
+  campus: string;
+  unreadCount: number;
+  updatedAt: string;
+  messages: ChatMessage[];
+};
+
 export type Tab = "Explore" | "Saved" | "Messages" | "Profile" | "MyListings" | "Dashboard";
+
 
