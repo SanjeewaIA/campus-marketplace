@@ -20,7 +20,6 @@ import {
   query,
   serverTimestamp,
   setDoc,
-  updateDoc,
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -37,15 +36,15 @@ import {
   View,
 } from "react-native";
 import { EmptyState } from "./components/EmptyState";
-import { DashboardPage } from "./pages/DashboardPage";
 import { ExplorePage } from "./pages/ExplorePage";
 import { MessagesPage } from "./pages/MessagesPage";
 import { MyListingsPage } from "./pages/MyListingsPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { SavedPage } from "./pages/SavedPage";
-import { seedConversations, seedListings } from "./data";
+import { seedListings } from "./data";
 import { auth, db, firebaseConfigured } from "./firebase";
-import { Conversation, Listing, Tab } from "./types";
+import { Listing, Tab } from "./types";
+import * as ImagePicker from 'expo-image-picker';
 
 async function registerUser(user: User) {
   if (!db) return;
@@ -67,21 +66,13 @@ async function registerUser(user: User) {
 export default function App() {
   const [tab, setTab] = useState<Tab>("Explore");
   const [items, setItems] = useState(seedListings);
-  const [conversations, setConversations] =
-    useState<Conversation[]>(seedConversations);
-  const [activeConversationId, setActiveConversationId] = useState<
-    string | null
-  >(null);
   const [queryText, setQueryText] = useState("");
   const [category, setCategory] = useState("All items");
-  const [minPrice, setMinPrice] = useState("");
-  const [maxPrice, setMaxPrice] = useState("");
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [selected, setSelected] = useState<Listing | null>(null);
   const [user, setUser] = useState<User | null>(auth?.currentUser || null);
   const [authOpen, setAuthOpen] = useState(false);
   const [sellOpen, setSellOpen] = useState(false);
-  const [reportOpen, setReportOpen] = useState(false);
   const [authError, setAuthError] = useState("");
   const [profileReady, setProfileReady] = useState(false);
 
@@ -134,8 +125,8 @@ export default function App() {
           snapshot.empty
             ? seedListings
             : snapshot.docs.map(
-              (entry) => ({ id: entry.id, ...entry.data() }) as Listing,
-            ),
+                (entry) => ({ id: entry.id, ...entry.data() }) as Listing,
+              ),
         ),
       () => setItems(seedListings),
     );
@@ -143,61 +134,23 @@ export default function App() {
 
   const filteredItems = useMemo(
     () =>
-      items.filter((item) => {
-        const matchesCategory =
-          category === "All items" || item.category === category;
-        const matchesQuery = item.title
-          .toLowerCase()
-          .includes(queryText.toLowerCase());
-        const min = minPrice ? Number(minPrice) : 0;
-        const max = maxPrice ? Number(maxPrice) : Infinity;
-        const matchesPrice = item.price >= min && item.price <= max;
-        return matchesCategory && matchesQuery && matchesPrice;
-      }),
-    [category, items, queryText, minPrice, maxPrice],
+      items.filter(
+        (item) =>
+          (category === "All items" || item.category === category) &&
+          item.title.toLowerCase().includes(queryText.toLowerCase()),
+      ),
+    [category, items, queryText],
   );
-
   const myListings = useMemo(
-    () =>
-      user
-        ? items.filter((item) => item.sellerId === user.uid)
-        : items.filter((_, idx) => idx % 2 === 0), // Show demo listings when guest
+    () => (user ? items.filter((item) => item.sellerId === user.uid) : []),
     [items, user],
   );
-
   const toggleSaved = (id: string) =>
     setSavedIds((current) =>
       current.includes(id)
         ? current.filter((value) => value !== id)
         : [...current, id],
     );
-
-  const toggleSoldStatus = async (id: string) => {
-    const item = items.find((entry) => entry.id === id);
-    const nextStatus = item?.status === "sold" ? "available" : "sold";
-
-    setItems((current) =>
-      current.map((entry) =>
-        entry.id === id ? { ...entry, status: nextStatus } : entry,
-      ),
-    );
-    setSelected((current) =>
-      current && current.id === id
-        ? {
-          ...current,
-          status: nextStatus,
-        }
-        : current,
-    );
-
-    if (db) {
-      try {
-        await updateDoc(doc(db, "listings", id), { status: nextStatus });
-      } catch (e) {
-        // demo mode / fallback without Firestore writes
-      }
-    }
-  };
   const signInWithGoogle = async () => {
     if (!auth) return;
     setAuthError("");
@@ -227,10 +180,12 @@ export default function App() {
       Alert.alert("Google sign-in failed", code);
     }
   };
-  const publish = async (
+    const publish = async (
     title: string,
     price: string,
     listingCategory: string,
+    description: string,
+    imageUri: string
   ) => {
     if (!user) {
       setSellOpen(false);
@@ -245,89 +200,21 @@ export default function App() {
       sellerId: user.uid,
       campus: "North Campus",
       condition: "Good condition",
-      image: seedListings[0].image,
-      description: "New listing from a campus seller.",
+      image: imageUri || seedListings[0].image,
+      description: description || "New listing from a campus seller.",
       createdAt: serverTimestamp(),
     });
     setSellOpen(false);
   };
-  const selectConversation = (id: string | null) => {
-    setActiveConversationId(id);
-    if (id) {
-      setConversations((current) =>
-        current.map((conv) =>
-          conv.id === id ? { ...conv, unreadCount: 0 } : conv,
-        ),
-      );
-    }
-  };
-
-  const sendMessage = (conversationId: string, text: string) => {
-    const buyerName =
-      user?.displayName || user?.email?.split("@")[0] || "You";
-    const now = "Just now";
-    const newMsgId = `msg-${Date.now()}`;
-
-    setConversations((current) =>
-      current.map((conv) =>
-        conv.id === conversationId
-          ? {
-            ...conv,
-            updatedAt: now,
-            unreadCount: 0,
-            messages: [
-              ...conv.messages,
-              {
-                id: newMsgId,
-                sender: "buyer",
-                senderName: buyerName,
-                text,
-                timestamp: now,
-              },
-            ],
-          }
-          : conv,
-      ),
-    );
-  };
-
+  
   const contactSeller = () => {
-    if (!selected) return;
-    const existing = conversations.find((c) => c.listingId === selected.id);
-    if (existing) {
-      selectConversation(existing.id);
-    } else {
-      const newConv: Conversation = {
-        id: `conv-${Date.now()}`,
-        listingId: selected.id,
-        listingTitle: selected.title,
-        listingPrice: selected.price,
-        listingImage: selected.image,
-        sellerName: selected.seller,
-        campus: selected.campus,
-        unreadCount: 0,
-        updatedAt: "Just now",
-        messages: [
-          {
-            id: `msg-${Date.now()}`,
-            sender: "seller",
-            senderName: selected.seller,
-            text: `Hi! Feel free to ask any questions about "${selected.title}" or suggest a campus meetup spot.`,
-            timestamp: "Just now",
-          },
-        ],
-      };
-      setConversations((current) => [newConv, ...current]);
-      setActiveConversationId(newConv.id);
+    if (!user) {
+      setAuthOpen(true);
+      return;
     }
     setSelected(null);
     setTab("Messages");
   };
-
-  const unreadTotal = useMemo(
-    () => conversations.reduce((sum, c) => sum + c.unreadCount, 0),
-    [conversations],
-  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -337,13 +224,9 @@ export default function App() {
           items={filteredItems}
           query={queryText}
           category={category}
-          minPrice={minPrice}
-          maxPrice={maxPrice}
           savedIds={savedIds}
           onQueryChange={setQueryText}
           onCategoryChange={setCategory}
-          onMinPriceChange={setMinPrice}
-          onMaxPriceChange={setMaxPrice}
           onSave={toggleSaved}
           onOpen={setSelected}
           onProfile={() => setTab("Profile")}
@@ -357,27 +240,12 @@ export default function App() {
         />
       )}
       {tab === "Messages" && (
-        <MessagesPage
-          conversations={conversations}
-          activeConversationId={activeConversationId}
-          onSelectConversation={selectConversation}
-          onSendMessage={sendMessage}
-          onBrowse={() => setTab("Explore")}
-        />
+        <MessagesPage onBrowse={() => setTab("Explore")} />
       )}
       {tab === "MyListings" && (
         <MyListingsPage
           items={myListings}
           onOpen={setSelected}
-          onSell={() => setSellOpen(true)}
-          onToggleSold={toggleSoldStatus}
-        />
-      )}
-      {tab === "Dashboard" && (
-        <DashboardPage
-          listings={items}
-          savedCount={savedIds.length}
-          onNavigate={setTab}
           onSell={() => setSellOpen(true)}
         />
       )}
@@ -389,7 +257,7 @@ export default function App() {
           firebaseConfigured={firebaseConfigured}
           profileReady={profileReady}
           error={authError}
-          onMyListings={() => setTab("MyListings")}
+          onMyListings={() => (user ? setTab("MyListings") : setAuthOpen(true))}
           onSaved={() => setTab("Saved")}
           onSignIn={() => setAuthOpen(true)}
           onSignOut={() => auth && signOut(auth)}
@@ -398,7 +266,6 @@ export default function App() {
       <BottomNav
         tab={tab}
         savedCount={savedIds.length}
-        unreadCount={unreadTotal}
         onChange={setTab}
         onSell={() => setSellOpen(true)}
       />
@@ -407,19 +274,6 @@ export default function App() {
         user={user}
         onClose={() => setSelected(null)}
         onContact={contactSeller}
-        onToggleSold={toggleSoldStatus}
-        onReport={() => setReportOpen(true)}
-      />
-      <ReportModal
-        visible={reportOpen}
-        onClose={() => setReportOpen(false)}
-        onSubmit={(reason) => {
-          setReportOpen(false);
-          Alert.alert(
-            "Report Submitted",
-            `Thank you. This listing has been flagged for "${reason}".`,
-          );
-        }}
       />
       <AuthModal
         visible={authOpen}
@@ -439,13 +293,11 @@ export default function App() {
 function BottomNav({
   tab,
   savedCount,
-  unreadCount,
   onChange,
   onSell,
 }: {
   tab: Tab;
   savedCount: number;
-  unreadCount: number;
   onChange: (tab: Tab) => void;
   onSell: () => void;
 }) {
@@ -468,14 +320,7 @@ function BottomNav({
         label="Messages"
         icon="□"
         active={tab === "Messages"}
-        badge={unreadCount}
         onPress={() => onChange("Messages")}
-      />
-      <NavItem
-        label="Dashboard"
-        icon="📊"
-        active={tab === "Dashboard"}
-        onPress={() => onChange("Dashboard")}
       />
       <Pressable style={styles.sellButton} onPress={onSell}>
         <Text style={styles.sellPlus}>＋</Text>
@@ -516,20 +361,12 @@ function ListingModal({
   user,
   onClose,
   onContact,
-  onToggleSold,
-  onReport,
 }: {
   item: Listing | null;
   user: User | null;
   onClose: () => void;
   onContact: () => void;
-  onToggleSold: (id: string) => void;
-  onReport: () => void;
 }) {
-  if (!item) return null;
-  const isSold = item.status === "sold";
-  const isOwner = user && user.uid === item.sellerId;
-
   return (
     <Modal
       visible={item !== null}
@@ -537,134 +374,34 @@ function ListingModal({
       animationType="slide"
       onRequestClose={onClose}
     >
-      <View style={styles.backdrop}>
-        <View style={styles.detail}>
-          <Image source={{ uri: item.image }} style={styles.detailImage} />
-          <Pressable style={styles.close} onPress={onClose}>
-            <Text style={styles.closeText}>×</Text>
-          </Pressable>
-          <View style={styles.detailBody}>
-            <View style={styles.categoryBadgeRow}>
+      {item && (
+        <View style={styles.backdrop}>
+          <View style={styles.detail}>
+            <Image source={{ uri: item.image }} style={styles.detailImage} />
+            <Pressable style={styles.close} onPress={onClose}>
+              <Text style={styles.closeText}>×</Text>
+            </Pressable>
+            <View style={styles.detailBody}>
               <Text style={styles.detailCategory}>
                 {item.category.toUpperCase()}
               </Text>
-              {isSold && (
-                <View style={styles.modalSoldBadge}>
-                  <Text style={styles.modalSoldBadgeText}>SOLD</Text>
-                </View>
-              )}
-            </View>
-
-            <Text style={styles.detailTitle}>{item.title}</Text>
-            <Text style={styles.detailPrice}>${item.price}</Text>
-            <Text style={styles.muted}>
-              {item.condition} · {item.campus} · {item.seller}
-            </Text>
-            <Text style={styles.description}>{item.description}</Text>
-
-            {/* Action buttons: Toggle Sold & Contact Seller */}
-            <View style={styles.actionGroup}>
-              <Pressable
-                style={[
-                  styles.soldToggleBtn,
-                  isSold && styles.soldToggleBtnActive,
-                ]}
-                onPress={() => onToggleSold(item.id)}
-              >
-                <Text
-                  style={[
-                    styles.soldToggleText,
-                    isSold && styles.soldToggleTextActive,
-                  ]}
-                >
-                  {isSold ? "✓ Mark as Available" : "✓ Mark as Sold"}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                disabled={isSold}
-                style={[styles.primary, isSold && styles.disabled]}
-                onPress={onContact}
-              >
+              <Text style={styles.detailTitle}>{item.title}</Text>
+              <Text style={styles.detailPrice}>${item.price}</Text>
+              <Text style={styles.muted}>
+                {item.condition} · {item.campus} · {item.seller}
+              </Text>
+              <Text style={styles.description}>{item.description}</Text>
+              <Pressable style={styles.primary} onPress={onContact}>
                 <Text style={styles.primaryText}>
-                  {isSold
-                    ? "Contact Seller — Disabled"
-                    : `💬 Message ${item.seller}`}
+                  {user
+                    ? `Message ${item.seller}`
+                    : "Sign in to contact seller"}
                 </Text>
-              </Pressable>
-
-              <Pressable style={styles.reportBtn} onPress={onReport}>
-                <Text style={styles.reportText}>🚩 Report this listing</Text>
               </Pressable>
             </View>
           </View>
         </View>
-      </View>
-    </Modal>
-  );
-}
-
-function ReportModal({
-  visible,
-  onClose,
-  onSubmit,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onSubmit: (reason: string) => void;
-}) {
-  const [selectedReason, setSelectedReason] = useState("Inappropriate content");
-  const reasons = [
-    "Inappropriate content",
-    "Fake or scam listing",
-    "Misleading description / price",
-    "Duplicate listing",
-  ];
-
-  return (
-    <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.backdrop}>
-        <View style={styles.auth}>
-          <Text style={styles.formTitle}>Report Listing</Text>
-          <Text style={styles.authMessage}>
-            Please select a reason for flagging this listing:
-          </Text>
-
-          <View style={styles.reasonsList}>
-            {reasons.map((r) => (
-              <Pressable
-                key={r}
-                style={[
-                  styles.reasonOption,
-                  selectedReason === r && styles.reasonOptionSelected,
-                ]}
-                onPress={() => setSelectedReason(r)}
-              >
-                <Text
-                  style={[
-                    styles.reasonText,
-                    selectedReason === r && styles.reasonTextSelected,
-                  ]}
-                >
-                  {selectedReason === r ? "◉ " : "◯ "}
-                  {r}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <Pressable
-            style={styles.primary}
-            onPress={() => onSubmit(selectedReason)}
-          >
-            <Text style={styles.primaryText}>Submit Report</Text>
-          </Pressable>
-
-          <Pressable style={styles.outline} onPress={onClose}>
-            <Text style={styles.outlineText}>Cancel</Text>
-          </Pressable>
-        </View>
-      </View>
+      )}
     </Modal>
   );
 }
@@ -708,11 +445,69 @@ function SellModal({
 }: {
   visible: boolean;
   onClose: () => void;
-  onSubmit: (title: string, price: string, category: string) => Promise<void>;
+  onSubmit: (
+    title: string,
+    price: string,
+    category: string,
+    description: string,
+    imageUri: string
+  ) => Promise<void>;
 }) {
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
   const [category, setCategory] = useState("Textbooks");
+  const [description, setDescription] = useState("");
+  const [imageUri, setImageUri] = useState("");
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.2,
+      base64: true,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      const base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;
+      setImageUri(base64Image);
+      setErrors((prev) => ({ ...prev, image: "" }));
+    }
+  };
+
+  const validate = () => {
+    const newErrors: Record<string, string> = {};
+    if (!title.trim()) newErrors.title = "Title is required";
+    if (!description.trim()) newErrors.description = "Description is required";
+    if (!imageUri) newErrors.image = "Image is required";
+
+    const priceNum = Number(price);
+    if (!price.trim()) {
+      newErrors.price = "Price is required";
+    } else if (isNaN(priceNum)) {
+      newErrors.price = "Price must be a number";
+    } else if (priceNum <= 0) {
+      newErrors.price = "Price must be greater than 0";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = async () => {
+    if (validate()) {
+      await onSubmit(title, price, category, description, imageUri);
+      // Reset form after submission
+      setTitle("");
+      setPrice("");
+      setCategory("Textbooks");
+      setDescription("");
+      setImageUri("");
+      setErrors({});
+    }
+  };
+
   return (
     <Modal visible={visible} transparent animationType="slide">
       <View style={styles.backdrop}>
@@ -723,26 +518,56 @@ function SellModal({
               <Text style={styles.closeText}>×</Text>
             </Pressable>
           </View>
+
           <Text style={styles.label}>What are you selling?</Text>
           <TextInput
             value={title}
-            onChangeText={setTitle}
+            onChangeText={(text) => {
+              setTitle(text);
+              if (errors.title) setErrors((prev) => ({ ...prev, title: "" }));
+            }}
             placeholder="e.g. Organic Chemistry textbook"
-            style={styles.field}
+            style={[styles.field, errors.title ? styles.fieldError : null]}
           />
+          {errors.title ? <Text style={styles.errorText}>{errors.title}</Text> : null}
+
           <Text style={styles.label}>Price</Text>
           <TextInput
             value={price}
-            onChangeText={setPrice}
+            onChangeText={(text) => {
+              setPrice(text);
+              if (errors.price) setErrors((prev) => ({ ...prev, price: "" }));
+            }}
             keyboardType="numeric"
             placeholder="$ 0"
-            style={styles.field}
+            style={[styles.field, errors.price ? styles.fieldError : null]}
           />
-          <Pressable
-            disabled={!title || !price}
-            style={[styles.primary, (!title || !price) && styles.disabled]}
-            onPress={() => onSubmit(title, price, category)}
-          >
+          {errors.price ? <Text style={styles.errorText}>{errors.price}</Text> : null}
+
+          <Text style={styles.label}>Description</Text>
+          <TextInput
+            value={description}
+            onChangeText={(text) => {
+              setDescription(text);
+              if (errors.description) setErrors((prev) => ({ ...prev, description: "" }));
+            }}
+            placeholder="Describe your item..."
+            multiline
+            numberOfLines={3}
+            style={[styles.field, styles.textArea, errors.description ? styles.fieldError : null]}
+          />
+          {errors.description ? <Text style={styles.errorText}>{errors.description}</Text> : null}
+
+          <Text style={styles.label}>Image</Text>
+          <Pressable style={styles.imagePickerButton} onPress={pickImage}>
+            <Text style={styles.imagePickerText}>
+              {imageUri ? "Change Image" : "Pick an Image"}
+            </Text>
+          </Pressable>
+          {imageUri ? <Image source={{ uri: imageUri }} style={styles.imagePreview} /> : null}
+          {errors.image ? <Text style={styles.errorText}>{errors.image}</Text> : null}
+
+          <Pressable style={styles.primary} onPress={handleSubmit}>
             <Text style={styles.primaryText}>Publish listing</Text>
           </Pressable>
         </View>
@@ -911,79 +736,38 @@ const styles = StyleSheet.create({
     color: "#173C34",
   },
   disabled: { opacity: 0.45 },
-  categoryBadgeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    fieldError: {
+    borderColor: "#B64950",
   },
-  modalSoldBadge: {
-    backgroundColor: "#C3535B",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
+  errorText: {
+    color: "#B64950",
+    fontSize: 12,
+    marginTop: 4,
   },
-  modalSoldBadgeText: {
-    color: "#FFF",
-    fontSize: 11,
-    fontWeight: "900",
-    letterSpacing: 1,
+  textArea: {
+    height: 80,
+    paddingTop: 12,
+    textAlignVertical: "top",
   },
-  actionGroup: {
-    marginTop: 10,
-    gap: 10,
-  },
-  soldToggleBtn: {
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: "#EBF3EE",
-    borderWidth: 1,
-    borderColor: "#BDD4C6",
-    alignItems: "center",
+  imagePickerButton: {
+    height: 44,
+    backgroundColor: "#E6F0E6",
+    borderRadius: 12,
     justifyContent: "center",
-  },
-  soldToggleBtnActive: {
-    backgroundColor: "#FCEEEF",
-    borderColor: "#E6B8BC",
-  },
-  soldToggleText: {
-    color: "#1F5D4C",
-    fontWeight: "800",
-    fontSize: 14,
-  },
-  soldToggleTextActive: {
-    color: "#C3535B",
-  },
-  reportBtn: {
-    paddingVertical: 12,
     alignItems: "center",
-    justifyContent: "center",
-  },
-  reportText: {
-    color: "#A0AAA4",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  reasonsList: {
-    marginVertical: 16,
-    gap: 10,
-  },
-  reasonOption: {
-    padding: 12,
-    borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#E0E5E2",
-    backgroundColor: "#FAFAFA",
+    borderColor: "#BCD0C3",
+    borderStyle: "dashed",
   },
-  reasonOptionSelected: {
-    borderColor: "#1F5D4C",
-    backgroundColor: "#EBF5EE",
-  },
-  reasonText: {
-    color: "#55645E",
-    fontSize: 14,
-  },
-  reasonTextSelected: {
-    color: "#1F5D4C",
+  imagePickerText: {
+    color: "#247055",
     fontWeight: "700",
+  },
+  imagePreview: {
+    width: "100%",
+    height: 150,
+    borderRadius: 12,
+    marginTop: 10,
+    resizeMode: "cover",
   },
 });
