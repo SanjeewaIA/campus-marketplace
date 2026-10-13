@@ -43,9 +43,9 @@ import { MessagesPage } from "./pages/MessagesPage";
 import { MyListingsPage } from "./pages/MyListingsPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { SavedPage } from "./pages/SavedPage";
-import { seedListings } from "./data";
+import { seedConversations, seedListings } from "./data";
 import { auth, db, firebaseConfigured } from "./firebase";
-import { Listing, Tab } from "./types";
+import { Conversation, Listing, Tab } from "./types";
 
 async function registerUser(user: User) {
   if (!db) return;
@@ -67,6 +67,11 @@ async function registerUser(user: User) {
 export default function App() {
   const [tab, setTab] = useState<Tab>("Explore");
   const [items, setItems] = useState(seedListings);
+  const [conversations, setConversations] =
+    useState<Conversation[]>(seedConversations);
+  const [activeConversationId, setActiveConversationId] = useState<
+    string | null
+  >(null);
   const [queryText, setQueryText] = useState("");
   const [category, setCategory] = useState("All items");
   const [minPrice, setMinPrice] = useState("");
@@ -246,14 +251,83 @@ export default function App() {
     });
     setSellOpen(false);
   };
+  const selectConversation = (id: string | null) => {
+    setActiveConversationId(id);
+    if (id) {
+      setConversations((current) =>
+        current.map((conv) =>
+          conv.id === id ? { ...conv, unreadCount: 0 } : conv,
+        ),
+      );
+    }
+  };
+
+  const sendMessage = (conversationId: string, text: string) => {
+    const buyerName =
+      user?.displayName || user?.email?.split("@")[0] || "You";
+    const now = "Just now";
+    const newMsgId = `msg-${Date.now()}`;
+
+    setConversations((current) =>
+      current.map((conv) =>
+        conv.id === conversationId
+          ? {
+            ...conv,
+            updatedAt: now,
+            unreadCount: 0,
+            messages: [
+              ...conv.messages,
+              {
+                id: newMsgId,
+                sender: "buyer",
+                senderName: buyerName,
+                text,
+                timestamp: now,
+              },
+            ],
+          }
+          : conv,
+      ),
+    );
+  };
+
   const contactSeller = () => {
-    if (!user) {
-      setAuthOpen(true);
-      return;
+    if (!selected) return;
+    const existing = conversations.find((c) => c.listingId === selected.id);
+    if (existing) {
+      selectConversation(existing.id);
+    } else {
+      const newConv: Conversation = {
+        id: `conv-${Date.now()}`,
+        listingId: selected.id,
+        listingTitle: selected.title,
+        listingPrice: selected.price,
+        listingImage: selected.image,
+        sellerName: selected.seller,
+        campus: selected.campus,
+        unreadCount: 0,
+        updatedAt: "Just now",
+        messages: [
+          {
+            id: `msg-${Date.now()}`,
+            sender: "seller",
+            senderName: selected.seller,
+            text: `Hi! Feel free to ask any questions about "${selected.title}" or suggest a campus meetup spot.`,
+            timestamp: "Just now",
+          },
+        ],
+      };
+      setConversations((current) => [newConv, ...current]);
+      setActiveConversationId(newConv.id);
     }
     setSelected(null);
     setTab("Messages");
   };
+
+  const unreadTotal = useMemo(
+    () => conversations.reduce((sum, c) => sum + c.unreadCount, 0),
+    [conversations],
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -283,7 +357,13 @@ export default function App() {
         />
       )}
       {tab === "Messages" && (
-        <MessagesPage onBrowse={() => setTab("Explore")} />
+        <MessagesPage
+          conversations={conversations}
+          activeConversationId={activeConversationId}
+          onSelectConversation={selectConversation}
+          onSendMessage={sendMessage}
+          onBrowse={() => setTab("Explore")}
+        />
       )}
       {tab === "MyListings" && (
         <MyListingsPage
@@ -318,6 +398,7 @@ export default function App() {
       <BottomNav
         tab={tab}
         savedCount={savedIds.length}
+        unreadCount={unreadTotal}
         onChange={setTab}
         onSell={() => setSellOpen(true)}
       />
@@ -358,11 +439,13 @@ export default function App() {
 function BottomNav({
   tab,
   savedCount,
+  unreadCount,
   onChange,
   onSell,
 }: {
   tab: Tab;
   savedCount: number;
+  unreadCount: number;
   onChange: (tab: Tab) => void;
   onSell: () => void;
 }) {
@@ -385,6 +468,7 @@ function BottomNav({
         label="Messages"
         icon="□"
         active={tab === "Messages"}
+        badge={unreadCount}
         onPress={() => onChange("Messages")}
       />
       <NavItem
@@ -505,9 +589,7 @@ function ListingModal({
                 <Text style={styles.primaryText}>
                   {isSold
                     ? "Contact Seller — Disabled"
-                    : user
-                      ? `Message ${item.seller}`
-                      : "Sign in to contact seller"}
+                    : `💬 Message ${item.seller}`}
                 </Text>
               </Pressable>
 

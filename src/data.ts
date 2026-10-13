@@ -1,4 +1,4 @@
-import { Listing } from "./types";
+import { Conversation, Listing } from "./types";
 
 export const categories = [
   "All items",
@@ -58,3 +58,63 @@ export const seedListings: Listing[] = [
     status: "sold",
   },
 ];
+
+export const seedConversations: Conversation[] = [
+  {
+    id: "conv-1",
+    listingId: "1",
+    listingTitle: "Calculus: Early Transcendentals",
+    listingPrice: 35,
+    listingImage:
+      "https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=800",
+    sellerName: "Maya R.",
+    campus: "North Campus",
+    unreadCount: 1,
+    updatedAt: "10:15 AM",
+    messages: [
+      {
+        id: "m-1",
+        sender: "buyer",
+        senderName: "You",
+        text: "Hi Maya! Is the Calculus textbook still available?",
+        timestamp: "10:12 AM",
+      },
+      {
+        id: "m-2",
+        sender: "seller",
+        senderName: "Maya R.",
+        text: "Yes, it is! No highlights or torn pages. We can meet near the North Campus Library today.",
+        timestamp: "10:15 AM",
+      },
+    ],
+  },
+  {
+    id: "conv-2",
+    listingId: "3",
+    listingTitle: "Noise-cancelling headphones",
+    listingPrice: 120,
+    listingImage:
+      "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800",
+    sellerName: "Alex P.",
+    campus: "East Quad",
+    unreadCount: 0,
+    updatedAt: "Yesterday",
+    messages: [
+      {
+        id: "m-3",
+        sender: "buyer",
+        senderName: "You",
+        text: "Hey Alex, does it come with the original carrying case?",
+        timestamp: "Yesterday",
+      },
+      {
+        id: "m-4",
+        sender: "seller",
+        senderName: "Alex P.",
+        text: "Yes! Hard case and USB-C charging cable are both included.",
+        timestamp: "Yesterday",
+      },
+    ],
+  },
+];
+
