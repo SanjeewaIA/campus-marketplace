@@ -1,22 +1,18 @@
 import { StatusBar } from "expo-status-bar";
 import {
   GoogleAuthProvider,
-  browserLocalPersistence,
-  getRedirectResult,
-  onAuthStateChanged,
-  setPersistence,
-  signInAnonymously,
+  User,
   signInWithPopup,
   signInWithRedirect,
   signOut,
-  User,
 } from "firebase/auth";
 import {
   addDoc,
   collection,
   doc,
+  getDocs,
+  limit,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -30,7 +26,6 @@ import {
   Platform,
   Pressable,
   SafeAreaView,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -46,24 +41,24 @@ import { SavedPage } from "./pages/SavedPage";
 import { seedConversations, seedListings } from "./data";
 import { auth, db, firebaseConfigured } from "./firebase";
 import { Conversation, Listing, Tab } from "./types";
-
+import * as ImagePicker from 'expo-image-picker';
 async function registerUser(user: User) {
   if (!db) return;
-  await setDoc(
-    doc(db, "users", user.uid),
-    {
-      uid: user.uid,
-      displayName:
-        user.displayName || user.email?.split("@")[0] || "Campus student",
-      email: user.email || "",
-      photoURL: user.photoURL || null,
-      campus: "North Campus",
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true },
-  );
+  try {
+    await setDoc(
+      doc(db, "users", user.uid),
+      {
+        displayName: user.displayName,
+        email: user.email,
+        photoURL: user.photoURL,
+        lastSeen: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  } catch (error) {
+    console.error("Failed to register user in Firestore:", error);
+  }
 }
-
 export default function App() {
   const [tab, setTab] = useState<Tab>("Explore");
   const [items, setItems] = useState(seedListings);
@@ -84,51 +79,28 @@ export default function App() {
   const [reportOpen, setReportOpen] = useState(false);
   const [authError, setAuthError] = useState("");
   const [profileReady, setProfileReady] = useState(false);
-
   useEffect(() => {
-    const firebaseAuth = auth;
-    if (!firebaseAuth) return;
-    const handleUser = (nextUser: User | null) => {
+    if (!auth) {
+      setProfileReady(true);
+      return;
+    }
+    const unsubAuth = auth.onAuthStateChanged(async (nextUser) => {
       setUser(nextUser);
-      if (nextUser)
-        registerUser(nextUser)
-          .then(() => setProfileReady(true))
-          .catch((error) =>
-            setAuthError(
-              error instanceof Error
-                ? error.message
-                : "Could not create profile.",
-            ),
-          );
-      else setProfileReady(false);
-    };
-    let unsubscribe: () => void = () => undefined;
-    setPersistence(firebaseAuth, browserLocalPersistence)
-      .then(() => {
-        unsubscribe = onAuthStateChanged(firebaseAuth, handleUser);
-        return getRedirectResult(firebaseAuth);
-      })
-      .then((result) => {
-        if (result?.user) handleUser(result.user);
-      })
-      .catch((error) =>
-        setAuthError(
-          error instanceof Error
-            ? error.message
-            : "Google sign-in could not be completed.",
-        ),
-      );
-    return () => unsubscribe();
+      setProfileReady(true);
+      if (nextUser) {
+        await registerUser(nextUser);
+      }
+    });
+    return () => unsubAuth();
   }, []);
-
   useEffect(() => {
-    if (!db) return;
-    const listingsQuery = query(
-      collection(db, "listings"),
-      orderBy("createdAt", "desc"),
-    );
-    return onSnapshot(
-      listingsQuery,
+    if (!db) {
+      setItems(seedListings);
+      return;
+    }
+    const q = query(collection(db, "listings"), limit(50));
+    const unsub = onSnapshot(
+      q,
       (snapshot) =>
         setItems(
           snapshot.empty
@@ -139,8 +111,18 @@ export default function App() {
         ),
       () => setItems(seedListings),
     );
+    getDocs(q).then((snapshot) => {
+      if (snapshot.empty) {
+        seedListings.forEach((item) => {
+          addDoc(collection(db!, "listings"), {
+            ...item,
+            createdAt: serverTimestamp(),
+          });
+        });
+      }
+    });
+    return () => unsub();
   }, []);
-
   const filteredItems = useMemo(
     () =>
       items.filter((item) => {
@@ -156,7 +138,6 @@ export default function App() {
       }),
     [category, items, queryText, minPrice, maxPrice],
   );
-
   const myListings = useMemo(
     () =>
       user
@@ -164,18 +145,15 @@ export default function App() {
         : items.filter((_, idx) => idx % 2 === 0), // Show demo listings when guest
     [items, user],
   );
-
   const toggleSaved = (id: string) =>
     setSavedIds((current) =>
       current.includes(id)
         ? current.filter((value) => value !== id)
         : [...current, id],
     );
-
   const toggleSoldStatus = async (id: string) => {
     const item = items.find((entry) => entry.id === id);
     const nextStatus = item?.status === "sold" ? "available" : "sold";
-
     setItems((current) =>
       current.map((entry) =>
         entry.id === id ? { ...entry, status: nextStatus } : entry,
@@ -189,7 +167,6 @@ export default function App() {
         }
         : current,
     );
-
     if (db) {
       try {
         await updateDoc(doc(db, "listings", id), { status: nextStatus });
@@ -202,20 +179,13 @@ export default function App() {
     if (!auth) return;
     setAuthError("");
     try {
-      await setPersistence(auth, browserLocalPersistence);
-      if (Platform.OS === "web") {
-        const result = await signInWithPopup(auth, new GoogleAuthProvider());
-        await registerUser(result.user);
-        setUser(result.user);
-        setProfileReady(true);
-        setAuthOpen(false);
-      } else {
-        await signInAnonymously(auth);
-        setAuthOpen(false);
-      }
-    } catch (error) {
-      const code =
-        error instanceof Error ? error.message : "Google sign-in failed.";
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+      const cred = await signInWithPopup(auth, provider);
+      await registerUser(cred.user);
+      setAuthOpen(false);
+    } catch (err: any) {
+      const code = err?.code || "auth/unknown";
       if (
         Platform.OS === "web" &&
         /popup|cancelled-popup-request/i.test(code)
@@ -231,6 +201,8 @@ export default function App() {
     title: string,
     price: string,
     listingCategory: string,
+    description: string,
+    imageUri: string,
   ) => {
     if (!user) {
       setSellOpen(false);
@@ -245,8 +217,8 @@ export default function App() {
       sellerId: user.uid,
       campus: "North Campus",
       condition: "Good condition",
-      image: seedListings[0].image,
-      description: "New listing from a campus seller.",
+      image: imageUri || seedListings[0].image,
+      description: description || "New listing from a campus seller.",
       createdAt: serverTimestamp(),
     });
     setSellOpen(false);
@@ -261,13 +233,11 @@ export default function App() {
       );
     }
   };
-
   const sendMessage = (conversationId: string, text: string) => {
     const buyerName =
       user?.displayName || user?.email?.split("@")[0] || "You";
     const now = "Just now";
     const newMsgId = `msg-${Date.now()}`;
-
     setConversations((current) =>
       current.map((conv) =>
         conv.id === conversationId
@@ -290,7 +260,6 @@ export default function App() {
       ),
     );
   };
-
   const contactSeller = () => {
     if (!selected) return;
     const existing = conversations.find((c) => c.listingId === selected.id);
@@ -323,12 +292,10 @@ export default function App() {
     setSelected(null);
     setTab("Messages");
   };
-
   const unreadTotal = useMemo(
     () => conversations.reduce((sum, c) => sum + c.unreadCount, 0),
     [conversations],
   );
-
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
@@ -347,13 +314,16 @@ export default function App() {
           onSave={toggleSaved}
           onOpen={setSelected}
           onProfile={() => setTab("Profile")}
+          onSell={() => setSellOpen(true)}
         />
       )}
       {tab === "Saved" && (
         <SavedPage
           items={items.filter((item) => savedIds.includes(item.id))}
+          savedIds={savedIds}
           onSave={toggleSaved}
           onOpen={setSelected}
+          onBrowse={() => setTab("Explore")}
         />
       )}
       {tab === "Messages" && (
@@ -384,8 +354,8 @@ export default function App() {
       {tab === "Profile" && (
         <ProfilePage
           user={user}
+          myCount={myListings.length}
           savedCount={savedIds.length}
-          listingCount={myListings.length}
           firebaseConfigured={firebaseConfigured}
           profileReady={profileReady}
           error={authError}
@@ -435,7 +405,6 @@ export default function App() {
     </SafeAreaView>
   );
 }
-
 function BottomNav({
   tab,
   savedCount,
@@ -453,7 +422,7 @@ function BottomNav({
     <View style={styles.nav}>
       <NavItem
         label="Explore"
-        icon="⌂"
+        icon="⌕"
         active={tab === "Explore"}
         onPress={() => onChange("Explore")}
       />
@@ -466,7 +435,7 @@ function BottomNav({
       />
       <NavItem
         label="Messages"
-        icon="□"
+        icon="✉"
         active={tab === "Messages"}
         badge={unreadCount}
         onPress={() => onChange("Messages")}
@@ -481,6 +450,12 @@ function BottomNav({
         <Text style={styles.sellPlus}>＋</Text>
         <Text style={styles.sellText}>Sell</Text>
       </Pressable>
+      <NavItem
+        label="Profile"
+        icon="👤"
+        active={tab === "Profile"}
+        onPress={() => onChange("Profile")}
+      />
     </View>
   );
 }
@@ -501,11 +476,11 @@ function NavItem({
     <Pressable style={styles.navItem} onPress={onPress}>
       <View>
         <Text style={[styles.navIcon, active && styles.navActive]}>{icon}</Text>
-        {badge ? (
+        {!!badge && badge > 0 && (
           <View style={styles.badge}>
             <Text style={styles.badgeText}>{badge}</Text>
           </View>
-        ) : null}
+        )}
       </View>
       <Text style={[styles.navLabel, active && styles.navActive]}>{label}</Text>
     </Pressable>
@@ -528,8 +503,6 @@ function ListingModal({
 }) {
   if (!item) return null;
   const isSold = item.status === "sold";
-  const isOwner = user && user.uid === item.sellerId;
-
   return (
     <Modal
       visible={item !== null}
@@ -554,14 +527,12 @@ function ListingModal({
                 </View>
               )}
             </View>
-
             <Text style={styles.detailTitle}>{item.title}</Text>
             <Text style={styles.detailPrice}>${item.price}</Text>
             <Text style={styles.muted}>
               {item.condition} · {item.campus} · {item.seller}
             </Text>
             <Text style={styles.description}>{item.description}</Text>
-
             {/* Action buttons: Toggle Sold & Contact Seller */}
             <View style={styles.actionGroup}>
               <Pressable
@@ -580,7 +551,6 @@ function ListingModal({
                   {isSold ? "✓ Mark as Available" : "✓ Mark as Sold"}
                 </Text>
               </Pressable>
-
               <Pressable
                 disabled={isSold}
                 style={[styles.primary, isSold && styles.disabled]}
@@ -592,7 +562,6 @@ function ListingModal({
                     : `💬 Message ${item.seller}`}
                 </Text>
               </Pressable>
-
               <Pressable style={styles.reportBtn} onPress={onReport}>
                 <Text style={styles.reportText}>🚩 Report this listing</Text>
               </Pressable>
@@ -603,7 +572,6 @@ function ListingModal({
     </Modal>
   );
 }
-
 function ReportModal({
   visible,
   onClose,
@@ -620,7 +588,6 @@ function ReportModal({
     "Misleading description / price",
     "Duplicate listing",
   ];
-
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.backdrop}>
@@ -629,7 +596,6 @@ function ReportModal({
           <Text style={styles.authMessage}>
             Please select a reason for flagging this listing:
           </Text>
-
           <View style={styles.reasonsList}>
             {reasons.map((r) => (
               <Pressable
@@ -652,14 +618,12 @@ function ReportModal({
               </Pressable>
             ))}
           </View>
-
           <Pressable
             style={styles.primary}
             onPress={() => onSubmit(selectedReason)}
           >
             <Text style={styles.primaryText}>Submit Report</Text>
           </Pressable>
-
           <Pressable style={styles.outline} onPress={onClose}>
             <Text style={styles.outlineText}>Cancel</Text>
           </Pressable>
@@ -708,11 +672,62 @@ function SellModal({
 }: {
   visible: boolean;
   onClose: () => void;
-  onSubmit: (title: string, price: string, category: string) => Promise<void>;
+  onSubmit: (
+    title: string,
+    price: string,
+    category: string,
+    description: string,
+    imageUri: string
+  ) => Promise<void>;
 }) {
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
   const [category, setCategory] = useState("Textbooks");
+  const [description, setDescription] = useState("");
+  const [imageUri, setImageUri] = useState("");
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.2,
+      base64: true,
+    });
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      const base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;
+      setImageUri(base64Image);
+      setErrors((prev) => ({ ...prev, image: "" }));
+    }
+  };
+  const validate = () => {
+    const newErrors: Record<string, string> = {};
+    if (!title.trim()) newErrors.title = "Title is required";
+    if (!description.trim()) newErrors.description = "Description is required";
+    if (!imageUri) newErrors.image = "Image is required";
+    const priceNum = Number(price);
+    if (!price.trim()) {
+      newErrors.price = "Price is required";
+    } else if (isNaN(priceNum)) {
+      newErrors.price = "Price must be a number";
+    } else if (priceNum <= 0) {
+      newErrors.price = "Price must be greater than 0";
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+  const handleSubmit = async () => {
+    if (validate()) {
+      await onSubmit(title, price, category, description, imageUri);
+      // Reset form after submission
+      setTitle("");
+      setPrice("");
+      setCategory("Textbooks");
+      setDescription("");
+      setImageUri("");
+      setErrors({});
+    }
+  };
   return (
     <Modal visible={visible} transparent animationType="slide">
       <View style={styles.backdrop}>
@@ -726,23 +741,48 @@ function SellModal({
           <Text style={styles.label}>What are you selling?</Text>
           <TextInput
             value={title}
-            onChangeText={setTitle}
+            onChangeText={(text) => {
+              setTitle(text);
+              if (errors.title) setErrors((prev) => ({ ...prev, title: "" }));
+            }}
             placeholder="e.g. Organic Chemistry textbook"
-            style={styles.field}
+            style={[styles.field, errors.title ? styles.fieldError : null]}
           />
+          {errors.title ? <Text style={styles.errorText}>{errors.title}</Text> : null}
           <Text style={styles.label}>Price</Text>
           <TextInput
             value={price}
-            onChangeText={setPrice}
+            onChangeText={(text) => {
+              setPrice(text);
+              if (errors.price) setErrors((prev) => ({ ...prev, price: "" }));
+            }}
             keyboardType="numeric"
             placeholder="$ 0"
-            style={styles.field}
+            style={[styles.field, errors.price ? styles.fieldError : null]}
           />
-          <Pressable
-            disabled={!title || !price}
-            style={[styles.primary, (!title || !price) && styles.disabled]}
-            onPress={() => onSubmit(title, price, category)}
-          >
+          {errors.price ? <Text style={styles.errorText}>{errors.price}</Text> : null}
+          <Text style={styles.label}>Description</Text>
+          <TextInput
+            value={description}
+            onChangeText={(text) => {
+              setDescription(text);
+              if (errors.description) setErrors((prev) => ({ ...prev, description: "" }));
+            }}
+            placeholder="Describe your item..."
+            multiline
+            numberOfLines={3}
+            style={[styles.field, styles.textArea, errors.description ? styles.fieldError : null]}
+          />
+          {errors.description ? <Text style={styles.errorText}>{errors.description}</Text> : null}
+          <Text style={styles.label}>Image</Text>
+          <Pressable style={styles.imagePickerButton} onPress={pickImage}>
+            <Text style={styles.imagePickerText}>
+              {imageUri ? "Change Image" : "Pick an Image"}
+            </Text>
+          </Pressable>
+          {imageUri ? <Image source={{ uri: imageUri }} style={styles.imagePreview} /> : null}
+          {errors.image ? <Text style={styles.errorText}>{errors.image}</Text> : null}
+          <Pressable style={styles.primary} onPress={handleSubmit}>
             <Text style={styles.primaryText}>Publish listing</Text>
           </Pressable>
         </View>
@@ -750,7 +790,6 @@ function SellModal({
     </Modal>
   );
 }
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F8F8F4" },
   nav: {
@@ -985,5 +1024,39 @@ const styles = StyleSheet.create({
   reasonTextSelected: {
     color: "#1F5D4C",
     fontWeight: "700",
+  },
+  fieldError: {
+    borderColor: "#B64950",
+  },
+  errorText: {
+    color: "#B64950",
+    fontSize: 12,
+    marginTop: 4,
+  },
+  textArea: {
+    height: 80,
+    paddingTop: 12,
+    textAlignVertical: "top",
+  },
+  imagePickerButton: {
+    height: 44,
+    backgroundColor: "#E6F0E6",
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#BCD0C3",
+    borderStyle: "dashed",
+  },
+  imagePickerText: {
+    color: "#247055",
+    fontWeight: "700",
+  },
+  imagePreview: {
+    width: "100%",
+    height: 150,
+    borderRadius: 12,
+    marginTop: 10,
+    resizeMode: "cover",
   },
 });
