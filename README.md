@@ -18,10 +18,10 @@ Our team took the core baseline project and extended it by implementing **5 majo
 | Member Name | Student Reg No | GitHub Username | Role & Implemented Feature |
 | :--- | :--- | :--- | :--- |
 | **Sanjeewa I.A.** | 2023/CSC/067 | [@SanjeewaIA](https://github.com/SanjeewaIA) | **Team Leader & Seller Dashboard** |
-| **Kavindi Heshara** | 2023/CSC/XXX | [@Kavindi-hesh](https://github.com/Kavindi-hesh) | **Mark as Sold Feature** |
-| **Sahan Dasanayaka** | 2023/CSC/XXX | [@Sahan-Dasanayaka](https://github.com/Sahan-Dasanayaka) | **Buyer/Seller Messaging System** |
-| **Anuththara Kulathunga** | 2023/CSC/XXX | [@AnnKulathunga](https://github.com/AnnKulathunga) | **Form Validation & Image Preview** |
-| **Yasitha Rukshan** | 2023/CSC/XXX | [@YasithaRukshan55](https://github.com/YasithaRukshan55) | **Listing CRUD & Explore Sorting** |
+| **Kavindi Heshara** | 2023/CSC/075 | [@Kavindi-hesh](https://github.com/Kavindi-hesh) | **Mark as Sold Feature** |
+| **Sahan Dasanayaka** | 2023/CSC/027 | [@Sahan-Dasanayaka](https://github.com/Sahan-Dasanayaka) | **Buyer/Seller Messaging System** |
+| **Anuththara Kulathunga** | 2023/CSC/081 | [@AnnKulathunga](https://github.com/AnnKulathunga) | **Form Validation & Image Preview** |
+| **Yasitha Rukshan** | 2023/CSC/082 | [@YasithaRukshan55](https://github.com/YasithaRukshan55) | **Listing CRUD & Explore Sorting** |
 
 ---
 
