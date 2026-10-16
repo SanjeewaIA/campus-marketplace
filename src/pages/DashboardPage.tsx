@@ -20,10 +20,10 @@ export function DashboardPage({
   const totalEarned = soldListings.reduce((sum, item) => sum + item.price, 0);
 
   // Group listings by category
-  const categoriesCount = listings.reduce((acc, item) => {
-    acc[item.category] = (acc[item.category] || 0) + 1;
-  }, {} as Record<string, number>);
-
+ const categoriesCount = listings.reduce((acc, item) => {
+  acc[item.category] = (acc[item.category] || 0) + 1;
+  return acc;
+}, {} as Record<string, number>);
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <PageTitle
