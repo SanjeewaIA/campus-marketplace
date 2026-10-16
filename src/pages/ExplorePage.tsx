@@ -1,3 +1,4 @@
+import React, { useMemo, useState } from "react";
 import {
   FlatList,
   Pressable,
@@ -8,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { ListingCard } from "../components/ListingCard";
+import { SortBar, SortOption } from "../components/SortBar";
 import { categories } from "../data";
 import { Listing } from "../types";
 
@@ -40,6 +42,17 @@ export function ExplorePage({
   onOpen: (item: Listing) => void;
   onProfile: () => void;
 }) {
+  // ⭐ [Member 5 Feature]: Sorting State and Logic
+  const [sortBy, setSortBy] = useState<SortOption>("newest");
+
+  const sortedItems = useMemo(() => {
+    return [...items].sort((a, b) => {
+      if (sortBy === "price_asc") return a.price - b.price;
+      if (sortBy === "price_desc") return b.price - a.price;
+      return (b.id || "").localeCompare(a.id || "");
+    });
+  }, [items, sortBy]);
+
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <View style={styles.header}>
@@ -64,7 +77,7 @@ export function ExplorePage({
         />
       </View>
 
-      {/* Price Range Filter Bar */}
+      {/* 🟢 [Member 2 Feature]: Price Range Filter Bar (100% Intact) */}
       <View style={styles.priceFilterRow}>
         <Text style={styles.filterLabel}>Price ($):</Text>
         <TextInput
@@ -97,13 +110,23 @@ export function ExplorePage({
         )}
       </View>
 
+      {/* ⭐ [Member 5 Feature]: SortBar Component */}
+      <SortBar
+        sortBy={sortBy}
+        onSortChange={setSortBy}
+        totalItems={sortedItems.length}
+      />
+
+      {/* 🟢 [Original]: Browse near you Section (100% Intact) */}
       <View style={styles.section}>
         <View>
           <Text style={styles.sectionTitle}>Browse near you</Text>
           <Text style={styles.muted}>Good finds, close by</Text>
         </View>
-        <Text style={styles.seeAll}>{items.length} items</Text>
+        <Text style={styles.seeAll}>{sortedItems.length} items</Text>
       </View>
+
+      {/* 🟢 [Original]: Categories Bar (100% Intact) */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -129,8 +152,10 @@ export function ExplorePage({
           </Pressable>
         ))}
       </ScrollView>
+
+      {/* 🟢 [Original]: Listings Grid (Renders sorted items) */}
       <FlatList
-        data={items}
+        data={sortedItems}
         scrollEnabled={false}
         numColumns={2}
         keyExtractor={(item) => item.id}
@@ -151,11 +176,13 @@ export function ExplorePage({
     </ScrollView>
   );
 }
+
 const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 110 },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
     paddingTop: 28,
     paddingBottom: 24,
   },
@@ -235,7 +262,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-end",
-    marginTop: 32,
+    marginTop: 24,
     marginBottom: 16,
   },
   sectionTitle: {
