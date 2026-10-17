@@ -233,32 +233,72 @@ export default function App() {
       );
     }
   };
-  const sendMessage = (conversationId: string, text: string) => {
+   const sendMessage = (conversationId: string, text: string) => {
     const buyerName =
       user?.displayName || user?.email?.split("@")[0] || "You";
     const now = "Just now";
     const newMsgId = `msg-${Date.now()}`;
+
+    // 1. Buyer ගේ Message එක Chat එකට Add කිරීම
     setConversations((current) =>
       current.map((conv) =>
         conv.id === conversationId
           ? {
-            ...conv,
-            updatedAt: now,
-            unreadCount: 0,
-            messages: [
-              ...conv.messages,
-              {
-                id: newMsgId,
-                sender: "buyer",
-                senderName: buyerName,
-                text,
-                timestamp: now,
-              },
-            ],
-          }
+              ...conv,
+              updatedAt: now,
+              unreadCount: 0,
+              messages: [
+                ...conv.messages,
+                {
+                  id: newMsgId,
+                  sender: "buyer",
+                  senderName: buyerName,
+                  text,
+                  timestamp: now,
+                },
+              ],
+            }
           : conv,
       ),
     );
+
+    // 2. තත්පර 1.5 කින් Seller ගෙන් එන Smart Auto-Reply එක ⭐
+    setTimeout(() => {
+      let replyText = "Sounds good to me! Let me know when you are on campus.";
+      const lower = text.toLowerCase();
+
+      if (lower.includes("library")) {
+        replyText = "Sure, the Main Library works great! I'll meet you near the ground floor entrance.";
+      } else if (lower.includes("available")) {
+        replyText = "Yes, it's still available and in great condition!";
+      } else if (lower.includes("price") || lower.includes("lower")) {
+        replyText = "I can reduce the price a little bit if you can pick it up today!";
+      } else if (lower.includes("today")) {
+        replyText = "Awesome! I am free on campus after 2:00 PM today.";
+      }
+
+      const sellerReplyId = `msg-seller-${Date.now()}`;
+      setConversations((current) =>
+        current.map((conv) =>
+          conv.id === conversationId
+            ? {
+                ...conv,
+                updatedAt: "Just now",
+                messages: [
+                  ...conv.messages,
+                  {
+                    id: sellerReplyId,
+                    sender: "seller",
+                    senderName: conv.sellerName,
+                    text: replyText,
+                    timestamp: "Just now",
+                  },
+                ],
+              }
+            : conv,
+        ),
+      );
+    }, 1500); // තත්පර 1.5 කින් reply එක එයි
   };
   const contactSeller = () => {
     if (!selected) return;
